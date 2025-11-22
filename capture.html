@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'">
+    <title>Capture Mode</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            cursor: crosshair;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.1);
+            position: relative;
+        }
+
+        #selection {
+            position: absolute;
+            border: 3px solid #00a8ff;
+            background: rgba(0, 168, 255, 0.3);
+            display: none;
+            pointer-events: none;
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+            cursor: move;
+        }
+
+        #instructions {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 4px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 24px;
+            z-index: 1000;
+        }
+
+        #captureButton {
+            position: absolute;
+            display: none;
+            background: #00a8ff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 14px;
+            cursor: pointer;
+            z-index: 1001;
+            pointer-events: auto;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        #captureButton:hover {
+            background: #0096e6;
+        }
+
+        #captureButton:active {
+            background: #0085cc;
+        }
+
+        #openWindowButton {
+            position: absolute;
+            display: none;
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 14px;
+            cursor: pointer;
+            z-index: 1001;
+            pointer-events: auto;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        #openWindowButton:hover {
+            background: #218838;
+        }
+
+        #openWindowButton:active {
+            background: #1e7e34;
+        }
+
+        .resize-handle {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background: #00a8ff;
+            border: 2px solid white;
+            display: none;
+            z-index: 1002;
+            pointer-events: auto;
+        }
+
+        .handle-nw {
+            top: -5px;
+            left: -5px;
+            cursor: nw-resize;
+        }
+
+        .handle-ne {
+            top: -5px;
+            right: -5px;
+            cursor: ne-resize;
+        }
+
+        .handle-sw {
+            bottom: -5px;
+            left: -5px;
+            cursor: sw-resize;
+        }
+
+        .handle-se {
+            bottom: -5px;
+            right: -5px;
+            cursor: se-resize;
+        }
+
+        .handle-n {
+            top: -5px;
+            left: 50%;
+            transform: translateX(-50%);
+            cursor: n-resize;
+        }
+
+        .handle-s {
+            bottom: -5px;
+            left: 50%;
+            transform: translateX(-50%);
+            cursor: s-resize;
+        }
+
+        .handle-w {
+            top: 50%;
+            left: -5px;
+            transform: translateY(-50%);
+            cursor: w-resize;
+        }
+
+        .handle-e {
+            top: 50%;
+            right: -5px;
+            transform: translateY(-50%);
+            cursor: e-resize;
+        }
+
+        #dimensions {
+            position: absolute;
+            display: none;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
+            font-size: 12px;
+            z-index: 1003;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="instructions">Click and drag to select area • ESC to cancel</div>
+    <div id="selection">
+        <div class="resize-handle handle-nw"></div>
+        <div class="resize-handle handle-n"></div>
+        <div class="resize-handle handle-ne"></div>
+        <div class="resize-handle handle-w"></div>
+        <div class="resize-handle handle-e"></div>
+        <div class="resize-handle handle-sw"></div>
+        <div class="resize-handle handle-s"></div>
+        <div class="resize-handle handle-se"></div>
+    </div>
+    <div id="dimensions"></div>
+    <button id="captureButton">Capture</button>
+    <button id="openWindowButton">Open Window</button>
+
+    <script>
+        const selection = document.getElementById('selection');
+        const captureButton = document.getElementById('captureButton');
+        const openWindowButton = document.getElementById('openWindowButton');
+        const instructions = document.getElementById('instructions');
+        const dimensions = document.getElementById('dimensions');
+        const resizeHandles = document.querySelectorAll('.resize-handle');
+        
+        let isSelecting = false;
+        let isResizing = false;
+        let isDragging = false;
+        let resizeHandle = null;
+        let startX = 0;
+        let startY = 0;
+        let selectionBounds = null;
+        let originalBounds = null;
+        let shiftPressed = false;
+
+        // Track shift key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Shift') {
+                shiftPressed = true;
+            }
+            if (e.key === 'Escape') {
+                window.electronAPI.captureCancel();
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.key === 'Shift') {
+                shiftPressed = false;
+            }
+        });
+
+        // Snap to grid helper
+        function snapToGrid(value, gridSize = 50) {
+            return Math.round(value / gridSize) * gridSize;
+        }
+
+        // Update dimensions display
+        function updateDimensions(width, height, left, top) {
+            dimensions.textContent = `${width} × ${height}`;
+            dimensions.style.left = (left + width + 5) + 'px';
+            dimensions.style.top = (top - 25) + 'px';
+            dimensions.style.display = 'block';
+        }
+
+        function hideDimensions() {
+            dimensions.style.display = 'none';
+        }
+
+        // Show/hide resize handles
+        function showResizeHandles() {
+            resizeHandles.forEach(handle => {
+                handle.style.display = 'block';
+            });
+        }
+
+        function hideResizeHandles() {
+            resizeHandles.forEach(handle => {
+                handle.style.display = 'none';
+            });
+        }
+
+        // Update selection bounds from style
+        function updateSelectionBounds() {
+            const left = parseInt(selection.style.left);
+            const top = parseInt(selection.style.top);
+            const width = parseInt(selection.style.width);
+            const height = parseInt(selection.style.height);
+            
+            selectionBounds = { x: left, y: top, width, height };
+            
+            // Update capture button position (left side)
+            const buttonTop = top + height + 10;
+            const buttonLeft = left + (width / 2) - 110; // Shifted left for two buttons
+            captureButton.style.left = buttonLeft + 'px';
+            captureButton.style.top = buttonTop + 'px';
+            
+            // Update open window button position (right side)
+            const openWindowButtonLeft = left + (width / 2) + 10;
+            openWindowButton.style.left = openWindowButtonLeft + 'px';
+            openWindowButton.style.top = buttonTop + 'px';
+            
+            // Update dimensions display
+            updateDimensions(width, height, left, top);
+        }
+
+        // Handle resize handle mousedown
+        resizeHandles.forEach(handle => {
+            handle.addEventListener('mousedown', (e) => {
+                e.stopPropagation();
+                isResizing = true;
+                resizeHandle = handle;
+                startX = e.clientX;
+                startY = e.clientY;
+                
+                originalBounds = {
+                    left: parseInt(selection.style.left),
+                    top: parseInt(selection.style.top),
+                    width: parseInt(selection.style.width),
+                    height: parseInt(selection.style.height)
+                };
+            });
+        });
+
+        document.addEventListener('mousedown', (e) => {
+            // Don't start new selection if clicking on capture button, open window button, or resize handle
+            if (e.target === captureButton || e.target === openWindowButton || e.target.classList.contains('resize-handle')) return;
+
+            // Check if clicking inside the selection rectangle
+            if (selectionBounds && e.target === selection) {
+                isDragging = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                originalBounds = {
+                    left: parseInt(selection.style.left),
+                    top: parseInt(selection.style.top),
+                    width: parseInt(selection.style.width),
+                    height: parseInt(selection.style.height)
+                };
+                document.body.style.cursor = 'move';
+                return;
+            }
+
+            // Block creating new selection if one already exists and is finalized
+            if (selectionBounds) {
+                return;
+            }
+
+            // Reset if starting new selection
+            captureButton.style.display = 'none';
+            openWindowButton.style.display = 'none';
+            hideResizeHandles();
+            hideDimensions();
+            instructions.style.display = 'block';
+            document.body.style.cursor = 'crosshair';
+
+            isSelecting = true;
+            startX = e.clientX;
+            startY = e.clientY;
+
+            selection.style.left = startX + 'px';
+            selection.style.top = startY + 'px';
+            selection.style.width = '0px';
+            selection.style.height = '0px';
+            selection.style.display = 'block';
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isDragging && originalBounds) {
+                const deltaX = e.clientX - startX;
+                const deltaY = e.clientY - startY;
+                
+                let newLeft = originalBounds.left + deltaX;
+                let newTop = originalBounds.top + deltaY;
+                
+                // Get screen dimensions
+                const screenWidth = window.innerWidth;
+                const screenHeight = window.innerHeight;
+                const selectionWidth = originalBounds.width;
+                const selectionHeight = originalBounds.height;
+                
+                // Constrain to screen boundaries
+                newLeft = Math.max(0, Math.min(newLeft, screenWidth - selectionWidth));
+                newTop = Math.max(0, Math.min(newTop, screenHeight - selectionHeight));
+                
+                selection.style.left = newLeft + 'px';
+                selection.style.top = newTop + 'px';
+                
+                // Update selection bounds and UI elements
+                selectionBounds.x = newLeft;
+                selectionBounds.y = newTop;
+                updateSelectionBounds();
+                return;
+            }
+
+            if (isResizing && resizeHandle && originalBounds) {
+                const deltaX = e.clientX - startX;
+                const deltaY = e.clientY - startY;
+                
+                let newLeft = originalBounds.left;
+                let newTop = originalBounds.top;
+                let newWidth = originalBounds.width;
+                let newHeight = originalBounds.height;
+
+                if (resizeHandle.classList.contains('handle-nw')) {
+                    newLeft = originalBounds.left + deltaX;
+                    newTop = originalBounds.top + deltaY;
+                    newWidth = originalBounds.width - deltaX;
+                    newHeight = originalBounds.height - deltaY;
+                } else if (resizeHandle.classList.contains('handle-ne')) {
+                    newTop = originalBounds.top + deltaY;
+                    newWidth = originalBounds.width + deltaX;
+                    newHeight = originalBounds.height - deltaY;
+                } else if (resizeHandle.classList.contains('handle-sw')) {
+                    newLeft = originalBounds.left + deltaX;
+                    newWidth = originalBounds.width - deltaX;
+                    newHeight = originalBounds.height + deltaY;
+                } else if (resizeHandle.classList.contains('handle-se')) {
+                    newWidth = originalBounds.width + deltaX;
+                    newHeight = originalBounds.height + deltaY;
+                } else if (resizeHandle.classList.contains('handle-n')) {
+                    newTop = originalBounds.top + deltaY;
+                    newHeight = originalBounds.height - deltaY;
+                } else if (resizeHandle.classList.contains('handle-s')) {
+                    newHeight = originalBounds.height + deltaY;
+                } else if (resizeHandle.classList.contains('handle-w')) {
+                    newLeft = originalBounds.left + deltaX;
+                    newWidth = originalBounds.width - deltaX;
+                } else if (resizeHandle.classList.contains('handle-e')) {
+                    newWidth = originalBounds.width + deltaX;
+                }
+
+                // Apply snapping if shift is pressed
+                if (shiftPressed) {
+                    newWidth = snapToGrid(newWidth);
+                    newHeight = snapToGrid(newHeight);
+                    
+                    // Adjust left/top if resizing from left/top edges
+                    if (resizeHandle.classList.contains('handle-nw') || 
+                        resizeHandle.classList.contains('handle-w') || 
+                        resizeHandle.classList.contains('handle-sw')) {
+                        newLeft = originalBounds.left + originalBounds.width - newWidth;
+                    }
+                    if (resizeHandle.classList.contains('handle-nw') || 
+                        resizeHandle.classList.contains('handle-n') || 
+                        resizeHandle.classList.contains('handle-ne')) {
+                        newTop = originalBounds.top + originalBounds.height - newHeight;
+                    }
+                }
+
+                // Minimum size
+                if (newWidth > 10 && newHeight > 10) {
+                    selection.style.left = newLeft + 'px';
+                    selection.style.top = newTop + 'px';
+                    selection.style.width = newWidth + 'px';
+                    selection.style.height = newHeight + 'px';
+                    updateSelectionBounds();
+                }
+                return;
+            }
+
+            if (!isSelecting) return;
+
+            const currentX = e.clientX;
+            const currentY = e.clientY;
+
+            let width = Math.abs(currentX - startX);
+            let height = Math.abs(currentY - startY);
+            let left = Math.min(currentX, startX);
+            let top = Math.min(currentY, startY);
+
+            // Apply snapping if shift is pressed during selection
+            if (shiftPressed) {
+                width = snapToGrid(width);
+                height = snapToGrid(height);
+                
+                // Keep the starting corner fixed, adjust based on drag direction
+                if (currentX < startX) {
+                    left = startX - width;
+                } else {
+                    left = startX;
+                }
+                
+                if (currentY < startY) {
+                    top = startY - height;
+                } else {
+                    top = startY;
+                }
+            }
+
+            selection.style.left = left + 'px';
+            selection.style.top = top + 'px';
+            selection.style.width = width + 'px';
+            selection.style.height = height + 'px';
+            
+            // Show dimensions during selection
+            updateDimensions(width, height, left, top);
+        });
+
+        document.addEventListener('mouseup', (e) => {
+            if (isDragging) {
+                isDragging = false;
+                originalBounds = null;
+                document.body.style.cursor = 'default';
+                return;
+            }
+
+            if (isResizing) {
+                isResizing = false;
+                resizeHandle = null;
+                originalBounds = null;
+                return;
+            }
+
+            if (!isSelecting) return;
+
+            isSelecting = false;
+
+            const currentX = e.clientX;
+            const currentY = e.clientY;
+
+            let width = Math.abs(currentX - startX);
+            let height = Math.abs(currentY - startY);
+            let left = Math.min(currentX, startX);
+            let top = Math.min(currentY, startY);
+
+            // Apply snapping if shift is pressed
+            if (shiftPressed) {
+                width = snapToGrid(width);
+                height = snapToGrid(height);
+                
+                // Keep the starting corner fixed, adjust based on drag direction
+                if (currentX < startX) {
+                    left = startX - width;
+                } else {
+                    left = startX;
+                }
+                
+                if (currentY < startY) {
+                    top = startY - height;
+                } else {
+                    top = startY;
+                }
+                
+                selection.style.left = left + 'px';
+                selection.style.top = top + 'px';
+                selection.style.width = width + 'px';
+                selection.style.height = height + 'px';
+            }
+
+            if (width > 5 && height > 5) {
+                // Keep the selection rectangle visible
+                selection.style.pointerEvents = 'auto';
+
+                // Store selection bounds
+                selectionBounds = {
+                    x: left,
+                    y: top,
+                    width: width,
+                    height: height
+                };
+
+                // Hide instructions
+                instructions.style.display = 'none';
+
+                // Show resize handles
+                showResizeHandles();
+
+                // Update dimensions
+                updateDimensions(width, height, left, top);
+
+                // Position buttons below the selection
+                const buttonTop = top + height + 10;
+                const buttonLeft = left + (width / 2) - 110;
+                const openWindowButtonLeft = left + (width / 2) + 10;
+
+                captureButton.style.left = buttonLeft + 'px';
+                captureButton.style.top = buttonTop + 'px';
+                captureButton.style.display = 'block';
+
+                openWindowButton.style.left = openWindowButtonLeft + 'px';
+                openWindowButton.style.top = buttonTop + 'px';
+                openWindowButton.style.display = 'block';
+
+                // Change cursor back to default
+                document.body.style.cursor = 'default';
+            } else {
+                // Selection too small, cancel
+                selection.style.display = 'none';
+                hideDimensions();
+                window.electronAPI.captureCancel();
+            }
+        });
+
+        // Capture button click handler
+        captureButton.addEventListener('click', () => {
+            if (selectionBounds) {
+                window.electronAPI.captureComplete(selectionBounds);
+            }
+        });
+
+        // Open Window button click handler
+        openWindowButton.addEventListener('click', () => {
+            if (selectionBounds) {
+                window.electronAPI.openWindow(selectionBounds);
+            }
+        });
+    </script>
+</body>
+
+</html>

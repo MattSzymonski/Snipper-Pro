@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'">
+    <title>Hollow Window</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+            background: transparent;
+        }
+
+        #hollow {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 40px;
+            border: 3px solid #ff6b6b;
+            background: transparent;
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.01);
+        }
+
+        #menuBar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 40px;
+            background: rgba(40, 40, 40, 0.95);
+            border-top: 1px solid #555;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding: 0 10px;
+        }
+
+        .menu-button {
+            background: #00a8ff;
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 4px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 14px;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .menu-button:hover {
+            background: #0096e6;
+        }
+
+        .menu-button:active {
+            background: #0085cc;
+        }
+
+        #dragHandle {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 30px;
+            background: rgba(255, 107, 107, 0.3);
+            cursor: move;
+            -webkit-app-region: drag;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="dragHandle"></div>
+    <div id="hollow"></div>
+    <div id="menuBar">
+        <button class="menu-button" id="captureBtn">Capture</button>
+    </div>
+
+    <script>
+        const captureBtn = document.getElementById('captureBtn');
+        
+        captureBtn.addEventListener('click', () => {
+            // Get the hollow area bounds (excluding the menu bar)
+            const bounds = {
+                x: window.screenX,
+                y: window.screenY,
+                width: window.innerWidth,
+                height: window.innerHeight - 40 // Exclude menu bar height
+            };
+            
+            window.electronAPI.hollowCapture(bounds);
+        });
+    </script>
+</body>
+
+</html>
